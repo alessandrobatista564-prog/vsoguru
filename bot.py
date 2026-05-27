@@ -1378,7 +1378,7 @@ async def obter(interaction: discord.Interaction):
     view = BotoesObter(user_id=interaction.user.id, jogador=jogador)
     await interaction.response.send_message(embed=embed, view=view)
 
-@tree.command(name="daily", description="Resgate R$ 200.000 diários (cooldown: 24h)")
+@tree.command(name="daily", description="Resgate R$ 25.000 diários (cooldown: 24h)")
 async def daily(interaction: discord.Interaction):
     user_id = interaction.user.id
     agora = datetime.now()
@@ -1407,7 +1407,7 @@ async def daily(interaction: discord.Interaction):
     user_id_str = str(interaction.user.id)
     membro = get_membro(dados, user_id_str)
     
-    bonus = 200_000
+    bonus = 25_000
     membro["saldo"] = membro.get("saldo", 0) + bonus
     salvar_dados(dados)
     

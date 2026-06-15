@@ -261,7 +261,7 @@ client.on('interactionCreate', async interaction => {
     // --- 1. ABRIR TICKET ---
     if (interaction.isStringSelectMenu() && interaction.customId === 'menu_ticket') {
         const categoria = interaction.values[0].replace('ticket_', ''); 
-        const ticketName = `ticket-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const ticketName = `${categoria}-${interaction.user.username}`.toLowerCase().replace(/[^a-z0-9-]/g, '');
 
         const existingChannel = interaction.guild.channels.cache.find(c => c.name === ticketName);
         if (existingChannel) {
@@ -284,7 +284,12 @@ client.on('interactionCreate', async interaction => {
                 {
                     id: client.user.id, 
                     allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory],
-                }
+                },
+                // Permissão para a Staff ver e responder aos tickets
+                ...['1514769809597005839', '1514769810817290422', '1514769811807277136', '1514769812780220467', '1514769808208695428', '1514769813921337545', '1515491977297133770'].map(roleId => ({
+                    id: roleId,
+                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles]
+                }))
             ],
         });
 

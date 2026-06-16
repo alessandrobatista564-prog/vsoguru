@@ -32,6 +32,9 @@ function saveRewardsDB(data) {
 let activeReward = null;
 let rewardPaused = false;
 
+// Mapa para rastrear quem assumiu cada ticket: channelId -> { userId, username }
+const ticketAssumedBy = new Map();
+
 const REWARD_ROLES = [
     { label: 'Pic Perm',      id: '1514769815712038913', emoji: '📷' },
     { label: 'Scout',         id: '1514769814764388482', emoji: '⚽' },
@@ -207,9 +210,8 @@ client.on('messageCreate', async (message) => {
     }
 
     // --- VERIFICA RESPOSTA DO REWARD ATIVO ---
-    // Bloqueia completamente se pausado, independente de ter reward ativo
     if (activeReward && message.channel.id === activeReward.channelId) {
-        if (rewardPaused) return; // sistema pausado: ignora tudo
+        if (rewardPaused) return;
 
         if (message.content.toLowerCase().trim() === activeReward.answer) {
             const winner = message.author;
@@ -280,13 +282,15 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
-        // Guarda userId e tag de quem criou para mostrar no embed
         const creatorId  = message.author.id;
         const creatorTag = message.author.tag;
 
+        // ✅ FIX 1: Usa "|" como separador para evitar conflito com "_" nos IDs
+        const safeCustomId = `btn_setup_reward|${message.guild.id}|${message.channel.id}|${creatorId}`;
+
         const rowSetup = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId(`btn_setup_reward_${message.guild.id}_${message.channel.id}_${creatorId}`)
+                .setCustomId(safeCustomId)
                 .setLabel('Configurar Pergunta e Resposta')
                 .setStyle(ButtonStyle.Primary)
                 .setEmoji('⚙️')
@@ -313,7 +317,6 @@ client.on('interactionCreate', async interaction => {
     if (interaction.isButton() && interaction.customId === 'btn_pause_rewards') {
         rewardPaused = true;
 
-        // Cancela reward ativo se houver
         if (activeReward) {
             if (activeReward.timeoutId) clearTimeout(activeReward.timeoutId);
             activeReward = null;
@@ -433,6 +436,12 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: '❌ Apenas membros da Staff podem assumir um ticket.', ephemeral: true });
         }
 
+        // ✅ FIX 2: Registra quem assumiu o ticket
+        ticketAssumedBy.set(interaction.channel.id, {
+            userId: interaction.user.id,
+            username: interaction.user.tag
+        });
+
         const rowAtualizada = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
@@ -466,6 +475,15 @@ client.on('interactionCreate', async interaction => {
 
         const [userId, categoria] = topic.split('-');
 
+        // ✅ FIX 2: Pega quem assumiu (ou indica que ninguém assumiu)
+        const assumedInfo = ticketAssumedBy.get(interaction.channel.id);
+        const assumidoPorTexto = assumedInfo
+            ? `<@${assumedInfo.userId}> (${assumedInfo.username})`
+            : 'Ninguém assumiu';
+
+        // Limpa o registro após fechar
+        ticketAssumedBy.delete(interaction.channel.id);
+
         try {
             const user = await client.users.fetch(userId);
             
@@ -474,6 +492,9 @@ client.on('interactionCreate', async interaction => {
                 .setAuthor({ name: 'Atendimento Concluído', iconURL: client.user.displayAvatarURL() })
                 .setDescription(`Olá! Seu ticket da categoria **${categoria}** foi marcado como resolvido e encerrado em nosso servidor.\n\n` +
                                 `A sua opinião é o que nos faz evoluir! Por favor, dedique **alguns segundos** para selecionar uma nota no menu abaixo e nos dizer como foi a sua experiência conosco.`)
+                .addFields(
+                    { name: '🙋 Atendido por', value: assumidoPorTexto, inline: false }
+                )
                 .setTimestamp()
                 .setFooter({ text: 'Agradecemos a sua preferência!', iconURL: interaction.guild ? interaction.guild.iconURL() : client.user.displayAvatarURL() });
 
@@ -558,20 +579,20 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- 6. BOTAO SETUP REWARD (Na DM) ---
-    if (interaction.isButton() && interaction.customId.startsWith('btn_setup_reward_')) {
-        // Se pausou entre o +rewards e o clique do botão, bloqueia aqui também
+    // ✅ FIX 1: Agora usa "|" como separador
+    if (interaction.isButton() && interaction.customId.startsWith('btn_setup_reward|')) {
         if (rewardPaused) {
             return interaction.reply({ content: '⏸️ O sistema de Rewards foi **pausado** antes de você configurar o evento. Peça para despausar e tente novamente.', ephemeral: true });
         }
 
-        const parts = interaction.customId.split('_');
-        // customId: btn_setup_reward_GUILDID_CHANNELID_CREATORID
-        const guildId    = parts[3];
-        const channelId  = parts[4];
-        const creatorId  = parts[5];
+        const parts = interaction.customId.split('|');
+        // customId: btn_setup_reward|GUILDID|CHANNELID|CREATORID
+        const guildId    = parts[1];
+        const channelId  = parts[2];
+        const creatorId  = parts[3];
 
         const modal = new ModalBuilder()
-            .setCustomId(`modal_reward_${guildId}_${channelId}_${creatorId}`)
+            .setCustomId(`modal_reward|${guildId}|${channelId}|${creatorId}`)
             .setTitle('Criar Novo Reward');
 
         const perguntaInput = new TextInputBuilder()
@@ -598,23 +619,23 @@ client.on('interactionCreate', async interaction => {
     }
 
     // --- 7. RECEBE O MODAL DA DM E INICIA O REWARD NO SERVIDOR ---
-    if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_reward_')) {
-        // Última barreira: checa pause no momento exato de publicar
+    // ✅ FIX 1: Agora usa "|" como separador
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_reward|')) {
         if (rewardPaused) {
             return interaction.reply({ content: '⏸️ O sistema de Rewards está **pausado**. O evento não foi iniciado.', ephemeral: true });
         }
 
-        const parts = interaction.customId.split('_');
-        // customId: modal_reward_GUILDID_CHANNELID_CREATORID
-        const guildId   = parts[2];
-        const channelId = parts[3];
-        const creatorId = parts[4];
+        const parts = interaction.customId.split('|');
+        // customId: modal_reward|GUILDID|CHANNELID|CREATORID
+        const guildId   = parts[1];
+        const channelId = parts[2];
+        const creatorId = parts[3];
 
         const pergunta = interaction.fields.getTextInputValue('reward_pergunta');
         const resposta = interaction.fields.getTextInputValue('reward_resposta');
         const answerClean = resposta.toLowerCase().trim();
 
-        // Busca o usuário criador para exibir no embed
+        // ✅ FIX 1: Busca o tag do criador corretamente com o ID limpo
         let creatorTag = 'Desconhecido';
         try {
             const creatorUser = await client.users.fetch(creatorId);
@@ -649,7 +670,7 @@ client.on('interactionCreate', async interaction => {
             .setAuthor({ name: '🎁 EVENTO REWARD!', iconURL: client.user.displayAvatarURL() })
             .setDescription(`**Pergunta:**\n> ${pergunta}\n\n*O primeiro a mandar a resposta certa no chat leva o prêmio!*\n\n⏳ **Atenção:** O evento expira automaticamente em 1 minuto e meio!`)
             .setTimestamp()
-            .setFooter({ text: `Reward por: ${creatorTag}` }); // ← "Reward por: user"
+            .setFooter({ text: `Reward por: ${creatorTag}` });
 
         try {
             const guild   = client.guilds.cache.get(guildId);

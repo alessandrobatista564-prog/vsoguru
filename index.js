@@ -34,6 +34,8 @@ let rewardPaused = false;
 
 // Mapa para rastrear quem assumiu cada ticket: channelId -> { userId, username }
 const ticketAssumedBy = new Map();
+// ✅ NOVO: guarda "assumido por" por userId do dono do ticket
+const userTicketStaff = new Map();
 
 const REWARD_ROLES = [
     { label: 'Pic Perm',      id: '1514769815712038913', emoji: '📷' },
@@ -481,7 +483,10 @@ client.on('interactionCreate', async interaction => {
             ? `<@${assumedInfo.userId}> (${assumedInfo.username})`
             : 'Ninguém assumiu';
 
-        // Limpa o registro após fechar
+        // ✅ NOVO: salva para usar no log da avaliação depois (por userId do dono)
+        userTicketStaff.set(userId, assumedInfo ? assumedInfo.username : 'Ninguém assumiu');
+
+        // Limpa o registro do canal após fechar
         ticketAssumedBy.delete(interaction.channel.id);
 
         try {
@@ -559,21 +564,26 @@ client.on('interactionCreate', async interaction => {
         if (canalAvaliacoesId) {
             const canalLog = client.channels.cache.get(canalAvaliacoesId);
             if (canalLog) {
-                const embedLog = new EmbedBuilder()
-                    .setColor('#005cff')
-                    .setAuthor({ name: 'Nova Avaliação Registrada', iconURL: interaction.user.displayAvatarURL() })
-                    .setDescription('Uma nova avaliação de atendimento foi enviada no sistema!')
-                    .addFields(
-                        { name: '👤 Usuário',        value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
-                        { name: '📁 Departamento',   value: `\`${categoria}\``,                                  inline: true },
-                        { name: '⭐ Nota Recebida',  value: `**${nota} Estrelas**`,                              inline: true },
-                        { name: '📝 Motivo / Feedback', value: `> *"${motivo}"*` }
-                    )
-                    .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 512 }))
-                    .setTimestamp()
-                    .setFooter({ text: `ID do Usuário: ${interaction.user.id}`, iconURL: client.user.displayAvatarURL() });
-                
-                await canalLog.send({ embeds: [embedLog] });
+                    // ✅ NOVO: recupera quem atendeu esse usuário
+                    const staffQueAtendeu = userTicketStaff.get(interaction.user.id) ?? 'Não registrado';
+                    userTicketStaff.delete(interaction.user.id); // limpa após usar
+
+                    const embedLog = new EmbedBuilder()
+                        .setColor('#005cff')
+                        .setAuthor({ name: 'Nova Avaliação Registrada', iconURL: interaction.user.displayAvatarURL() })
+                        .setDescription('Uma nova avaliação de atendimento foi enviada no sistema!')
+                        .addFields(
+                            { name: '👤 Usuário',        value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
+                            { name: '📁 Departamento',   value: `\`${categoria}\``,                                  inline: true },
+                            { name: '⭐ Nota Recebida',  value: `**${nota} Estrelas**`,                              inline: true },
+                            { name: '🙋 Atendido por',   value: staffQueAtendeu,                                     inline: false },
+                            { name: '📝 Motivo / Feedback', value: `> *"${motivo}"*` }
+                        )
+                        .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 512 }))
+                        .setTimestamp()
+                        .setFooter({ text: `ID do Usuário: ${interaction.user.id}`, iconURL: client.user.displayAvatarURL() });
+
+                    await canalLog.send({ embeds: [embedLog] });
             }
         }
     }

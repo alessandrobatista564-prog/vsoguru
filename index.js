@@ -31,11 +31,6 @@ function saveRewardsDB(data) {
 
 let activeReward = null;
 
-// =======================================================
-// ⚙️ CONFIGURAÇÃO DOS CARGOS DO REWARD
-// Coloque aqui o nome, ID e Emoji dos cargos que os membros 
-// poderão escolher ao vencer o evento de Chat (+rewards)
-// =======================================================
 const REWARD_ROLES = [
     { label: 'Pic Perm',   id: '1514769815712038913', emoji: '📷' },
     { label: 'Scout', id: '1514769814764388482', emoji: '⚽' },
@@ -45,9 +40,6 @@ const REWARD_ROLES = [
     { label: 'Vip Bronze',id: '1515910834558075041', emoji: '🏦' }
 ];
 
-// =======================================================
-// 🛡️ CARGOS PERMITIDOS PARA CRIAR REWARDS (+rewards)
-// =======================================================
 const REWARD_ADMIN_ROLES = [
     '1514769809597005839', 
     '1514769810817290422', 
@@ -55,6 +47,17 @@ const REWARD_ADMIN_ROLES = [
     '1514769812780220467', 
     '1515491977297133770',
     '1514769808208695428',
+];
+
+// Cargos que podem assumir e fechar tickets
+const STAFF_ROLES = [
+    '1514769809597005839',
+    '1514769810817290422',
+    '1514769811807277136',
+    '1514769812780220467',
+    '1514769808208695428',
+    '1514769813921337545',
+    '1515491977297133770'
 ];
 
 const client = new Client({
@@ -70,7 +73,6 @@ const client = new Client({
 client.on('ready', async () => {
     console.log(`✅ Bot online e logado como: ${client.user.tag}`);
     
-    // --- VERIFICADOR DE CARGOS EXPIRADOS (A cada 1 hora) ---
     setInterval(async () => {
         let db = loadRewardsDB();
         const now = Date.now();
@@ -96,15 +98,12 @@ client.on('ready', async () => {
         if (changed) saveRewardsDB(db);
     }, 60 * 60 * 1000);
 
-    // --- ENVIO AUTOMÁTICO DO PAINEL DE TICKETS ---
     const panelChannelId = '1514769852248887536';
     try {
         const channel = await client.channels.fetch(panelChannelId);
         if (channel) {
-            // Busca as últimas 10 mensagens do canal
             const messages = await channel.messages.fetch({ limit: 10 });
             
-            // Verifica se o bot já mandou o painel recentemente
             const hasPanel = messages.some(m => 
                 m.author.id === client.user.id && 
                 m.components.length > 0 && 
@@ -159,7 +158,6 @@ client.on('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // -- REWARD CHECK (Checa se tem um evento rolando e se a pessoa acertou) --
     if (activeReward && message.channel.id === activeReward.channelId) {
         if (message.content.toLowerCase().trim() === activeReward.answer) {
             const winner = message.author;
@@ -168,7 +166,7 @@ client.on('messageCreate', async (message) => {
             if (activeReward.timeoutId) {
                 clearTimeout(activeReward.timeoutId);
             }
-            activeReward = null; // Encerra o evento na hora
+            activeReward = null;
             
             const embedVencedor = new EmbedBuilder()
                 .setColor('#00ce5d')
@@ -179,7 +177,6 @@ client.on('messageCreate', async (message) => {
 
             await message.reply({ embeds: [embedVencedor] });
 
-            // Manda DM para o vencedor
             const embedDM = new EmbedBuilder()
                 .setColor('#ffcc00')
                 .setAuthor({ name: '🏆 Você venceu o Reward!', iconURL: client.user.displayAvatarURL() })
@@ -204,17 +201,13 @@ client.on('messageCreate', async (message) => {
                 console.error('Erro ao enviar recompensa na DM:', err);
                 message.channel.send(`⚠️ ${winner}, ocorreu um erro ao enviar a recompensa na sua DM (ou ela está fechada). Consulte o console do bot para mais detalhes.`);
             });
-            return; // Impede que o codigo continue se ele só estava respondendo o reward
+            return;
         }
     }
 
-    // (Comando !painel removido - O bot envia automaticamente ao ligar)
-
-    // --- COMANDO +rewards ---
     if (message.content === '+rewards') {
         await message.delete().catch(() => {});
 
-        // --- VERIFICAÇÃO DE PERMISSÃO ---
         if (message.member) {
             const hasPerm = message.member.roles.cache.some(r => REWARD_ADMIN_ROLES.includes(r.id));
             if (!hasPerm) {
@@ -285,8 +278,7 @@ client.on('interactionCreate', async interaction => {
                     id: client.user.id, 
                     allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory],
                 },
-                // Permissão para a Staff ver e responder aos tickets
-                ...['1514769809597005839', '1514769810817290422', '1514769811807277136', '1514769812780220467', '1514769808208695428', '1514769813921337545', '1515491977297133770'].map(roleId => ({
+                ...STAFF_ROLES.map(roleId => ({
                     id: roleId,
                     allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles]
                 }))
@@ -308,18 +300,59 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: `Ticket aberto por ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() });
 
+        // Botões: Assumir Ticket (Staff) + Encerrar Atendimento
         const rowTicket = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
+                    .setCustomId('assumir_ticket')
+                    .setLabel('Assumir Ticket')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('🙋'),
+                new ButtonBuilder()
                     .setCustomId('fechar_ticket')
-                    .setLabel('🔒 Encerrar Atendimento')
+                    .setLabel('Encerrar Atendimento')
                     .setStyle(ButtonStyle.Danger)
+                    .setEmoji('🔒')
             );
 
         await channel.send({ content: `||${interaction.user}||`, embeds: [embedTicket], components: [rowTicket] });
     }
 
-    // --- 2. FECHAR TICKET E MANDAR MENSAGEM NO PV ---
+    // --- 2. ASSUMIR TICKET ---
+    if (interaction.isButton() && interaction.customId === 'assumir_ticket') {
+        // Verifica se quem clicou tem um cargo de staff
+        const isStaff = interaction.member.roles.cache.some(r => STAFF_ROLES.includes(r.id));
+        if (!isStaff) {
+            return interaction.reply({ content: '❌ Apenas membros da Staff podem assumir um ticket.', ephemeral: true });
+        }
+
+        // Atualiza os botões: desabilita o "Assumir" e mostra quem assumiu
+        const rowAtualizada = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('assumir_ticket')
+                    .setLabel(`Assumido por ${interaction.user.username}`)
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('✅')
+                    .setDisabled(true),
+                new ButtonBuilder()
+                    .setCustomId('fechar_ticket')
+                    .setLabel('Encerrar Atendimento')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('🔒')
+            );
+
+        await interaction.update({ components: [rowAtualizada] });
+
+        // Manda mensagem no canal avisando quem assumiu
+        const embedAssumido = new EmbedBuilder()
+            .setColor('#00ce5d')
+            .setDescription(`🙋 ${interaction.user} **assumiu este ticket** e em breve irá te atender!`);
+
+        await interaction.channel.send({ embeds: [embedAssumido] });
+    }
+
+    // --- 3. FECHAR TICKET E MANDAR MENSAGEM NO PV ---
     if (interaction.isButton() && interaction.customId === 'fechar_ticket') {
         const topic = interaction.channel.topic;
         if (!topic || !topic.includes('-')) {
@@ -362,7 +395,7 @@ client.on('interactionCreate', async interaction => {
         setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
     }
 
-    // --- 3. SELECIONOU A NOTA NA DM -> ABRE O MODAL ---
+    // --- 4. SELECIONOU A NOTA NA DM -> ABRE O MODAL ---
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('avaliar_')) {
         const categoria = interaction.customId.replace('avaliar_', '');
         const nota = interaction.values[0];
@@ -385,7 +418,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.showModal(modal);
     }
 
-    // --- 4. RECEBE O MODAL (MOTIVO) E LOGA A AVALIAÇÃO ---
+    // --- 5. RECEBE O MODAL (MOTIVO) E LOGA A AVALIAÇÃO ---
     if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_nota_')) {
         const parts = interaction.customId.split('_'); 
         const nota = parts[2];
@@ -404,9 +437,8 @@ client.on('interactionCreate', async interaction => {
             const canalLog = client.channels.cache.get(canalAvaliacoesId);
             
             if (canalLog) {
-                // Monta um Log de Avaliação muito mais premium
                 const embedLog = new EmbedBuilder()
-                    .setColor('#005cff') // Azul
+                    .setColor('#005cff')
                     .setAuthor({ name: 'Nova Avaliação Registrada', iconURL: interaction.user.displayAvatarURL() })
                     .setDescription('Uma nova avaliação de atendimento foi enviada no sistema!')
                     .addFields(
@@ -424,7 +456,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- 5. BOTAO SETUP REWARD (Agora na DM) ---
+    // --- 6. BOTAO SETUP REWARD (Na DM) ---
     if (interaction.isButton() && interaction.customId.startsWith('btn_setup_reward_')) {
         const parts = interaction.customId.split('_');
         const guildId = parts[3];
@@ -457,7 +489,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.showModal(modal);
     }
 
-    // --- 6. RECEBE O MODAL DA DM E INICIA O REWARD NO SERVIDOR ---
+    // --- 7. RECEBE O MODAL DA DM E INICIA O REWARD NO SERVIDOR ---
     if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_reward_')) {
         const parts = interaction.customId.split('_');
         const guildId = parts[2];
@@ -470,7 +502,6 @@ client.on('interactionCreate', async interaction => {
 
         const timeoutId = setTimeout(async () => {
             if (activeReward && activeReward.channelId === channelId) {
-                const correctAnswer = activeReward.answer;
                 activeReward = null; 
 
                 try {
@@ -488,7 +519,7 @@ client.on('interactionCreate', async interaction => {
                     console.log("Erro ao expirar evento", e);
                 }
             }
-        }, 90000); // 90 segundos = 1 minuto e meio
+        }, 90000);
 
         activeReward = {
             channelId: channelId,
@@ -502,20 +533,18 @@ client.on('interactionCreate', async interaction => {
             .setAuthor({ name: '🎁 EVENTO REWARD!', iconURL: client.user.displayAvatarURL() })
             .setDescription(`**Pergunta:**\n> ${pergunta}\n\n*O primeiro a mandar a resposta certa no chat leva o prêmio!*\n\n⏳ **Atenção:** O evento expira automaticamente em 1 minuto e meio!`)
             .setTimestamp()
-            .setFooter({ text: 'Seja rápido!' }); // Sem icon da guild aqui pra nao complicar
+            .setFooter({ text: 'Seja rápido!' });
 
         try {
             const guild = client.guilds.cache.get(guildId);
             const channel = guild.channels.cache.get(channelId);
             
-            // Envia no canal do servidor marcando @here corretamente
             await channel.send({ 
                 content: '@here', 
                 embeds: [embedReward],
                 allowedMentions: { parse: ['everyone'] } 
             });
 
-            // Responde na DM confirmando
             await interaction.reply({ content: '✅ O evento reward foi iniciado com sucesso no servidor!', ephemeral: true });
         } catch (err) {
             console.log(err);
@@ -523,7 +552,7 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // --- 7. USUARIO ESCOLHE O CARGO NA DM ---
+    // --- 8. USUARIO ESCOLHE O CARGO NA DM ---
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('reward_role_select_')) {
         const guildId = interaction.customId.replace('reward_role_select_', '');
         const roleId = interaction.values[0];
@@ -541,13 +570,12 @@ client.on('interactionCreate', async interaction => {
 
             await member.roles.add(roleId);
             
-            // Salva na DB para remover em 10 dias
             const db = loadRewardsDB();
             db.push({
                 userId: interaction.user.id,
                 guildId: guild.id,
                 roleId: roleId,
-                expiresAt: Date.now() + (10 * 24 * 60 * 60 * 1000) // 10 dias
+                expiresAt: Date.now() + (10 * 24 * 60 * 60 * 1000)
             });
             saveRewardsDB(db);
             

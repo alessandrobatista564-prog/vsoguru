@@ -30,15 +30,15 @@ function saveRewardsDB(data) {
 }
 
 let activeReward = null;
-let rewardPaused = false; // 🆕 Controla se o sistema de rewards está pausado
+let rewardPaused = false;
 
 const REWARD_ROLES = [
-    { label: 'Pic Perm',   id: '1514769815712038913', emoji: '📷' },
-    { label: 'Scout', id: '1514769814764388482', emoji: '⚽' },
-    { label: 'Scrim Hoster',   id: '1514769817142427678', emoji: '🔱' },
-    { label: 'Vip Gold',     id: '1515910652273627176', emoji: '💰' },
-    { label: 'Vip Prata',id: '1515910764509266022', emoji: '⭐' },
-    { label: 'Vip Bronze',id: '1515910834558075041', emoji: '🏦' }
+    { label: 'Pic Perm',      id: '1514769815712038913', emoji: '📷' },
+    { label: 'Scout',         id: '1514769814764388482', emoji: '⚽' },
+    { label: 'Scrim Hoster',  id: '1514769817142427678', emoji: '🔱' },
+    { label: 'Vip Gold',      id: '1515910652273627176', emoji: '💰' },
+    { label: 'Vip Prata',     id: '1515910764509266022', emoji: '⭐' },
+    { label: 'Vip Bronze',    id: '1515910834558075041', emoji: '🏦' }
 ];
 
 const REWARD_ADMIN_ROLES = [
@@ -50,10 +50,8 @@ const REWARD_ADMIN_ROLES = [
     '1514769808208695428',
 ];
 
-// 🆕 Cargo exclusivo que pode pausar/despausar o sistema de rewards
 const PAUSE_ROLE_ID = '1514769809597005839';
 
-// Cargos que podem assumir e fechar tickets
 const STAFF_ROLES = [
     '1514769809597005839',
     '1514769810817290422',
@@ -140,11 +138,11 @@ client.on('ready', async () => {
                             .setCustomId('menu_ticket')
                             .setPlaceholder('📋 Selecione o departamento desejado...')
                             .addOptions([
-                                { label: 'Partner', description: 'Assuntos sobre parcerias e divulgações', value: 'ticket_Partner', emoji: '🤝' },
-                                { label: 'Denúncias', description: 'Reportar infrações ou má conduta', value: 'ticket_Denúncias', emoji: '🚨' },
-                                { label: 'Dúvidas', description: 'Esclarecer dúvidas sobre o servidor', value: 'ticket_Dúvidas', emoji: '❓' },
-                                { label: 'Ownar', description: 'Assuntos diretamente relacionados a Ownar', value: 'ticket_Ownar', emoji: '👑' },
-                                { label: 'Cargos', description: 'Informações sobre cargos, compras e VIPs', value: 'ticket_Cargos', emoji: '💎' }
+                                { label: 'Partner',   description: 'Assuntos sobre parcerias e divulgações',   value: 'ticket_Partner',   emoji: '🤝' },
+                                { label: 'Denúncias', description: 'Reportar infrações ou má conduta',         value: 'ticket_Denúncias', emoji: '🚨' },
+                                { label: 'Dúvidas',   description: 'Esclarecer dúvidas sobre o servidor',      value: 'ticket_Dúvidas',   emoji: '❓' },
+                                { label: 'Ownar',     description: 'Assuntos diretamente relacionados a Ownar',value: 'ticket_Ownar',     emoji: '👑' },
+                                { label: 'Cargos',    description: 'Informações sobre cargos, compras e VIPs', value: 'ticket_Cargos',    emoji: '💎' }
                             ])
                     );
 
@@ -162,11 +160,10 @@ client.on('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    // 🆕 --- COMANDO !pause ---
+    // --- COMANDO !pause ---
     if (message.content === '!pause') {
         await message.delete().catch(() => {});
 
-        // Verifica se o membro tem o cargo exclusivo
         const hasPauseRole = message.member?.roles.cache.has(PAUSE_ROLE_ID);
         if (!hasPauseRole) {
             const msgError = await message.channel.send(`❌ ${message.author}, você não possui permissão para usar este comando!`);
@@ -191,13 +188,13 @@ client.on('messageCreate', async (message) => {
                     .setLabel('Pausar')
                     .setStyle(ButtonStyle.Danger)
                     .setEmoji('⏸️')
-                    .setDisabled(rewardPaused), // desabilita se já estiver pausado
+                    .setDisabled(rewardPaused),
                 new ButtonBuilder()
                     .setCustomId('btn_unpause_rewards')
                     .setLabel('Despausar')
                     .setStyle(ButtonStyle.Success)
                     .setEmoji('▶️')
-                    .setDisabled(!rewardPaused) // desabilita se já estiver ativo
+                    .setDisabled(!rewardPaused)
             );
 
         try {
@@ -209,15 +206,16 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // Verifica resposta do reward ativo (só processa se NÃO estiver pausado)
-    if (activeReward && !rewardPaused && message.channel.id === activeReward.channelId) {
+    // --- VERIFICA RESPOSTA DO REWARD ATIVO ---
+    // Bloqueia completamente se pausado, independente de ter reward ativo
+    if (activeReward && message.channel.id === activeReward.channelId) {
+        if (rewardPaused) return; // sistema pausado: ignora tudo
+
         if (message.content.toLowerCase().trim() === activeReward.answer) {
             const winner = message.author;
             const guildId = activeReward.guildId;
             
-            if (activeReward.timeoutId) {
-                clearTimeout(activeReward.timeoutId);
-            }
+            if (activeReward.timeoutId) clearTimeout(activeReward.timeoutId);
             activeReward = null;
             
             const embedVencedor = new EmbedBuilder()
@@ -251,12 +249,13 @@ client.on('messageCreate', async (message) => {
             
             await winner.send({ embeds: [embedDM], components: [rowCargos] }).catch((err) => {
                 console.error('Erro ao enviar recompensa na DM:', err);
-                message.channel.send(`⚠️ ${winner}, ocorreu um erro ao enviar a recompensa na sua DM (ou ela está fechada). Consulte o console do bot para mais detalhes.`);
+                message.channel.send(`⚠️ ${winner}, ocorreu um erro ao enviar a recompensa na sua DM. Consulte o console para mais detalhes.`);
             });
             return;
         }
     }
 
+    // --- COMANDO +rewards ---
     if (message.content === '+rewards') {
         await message.delete().catch(() => {});
 
@@ -269,7 +268,6 @@ client.on('messageCreate', async (message) => {
             }
         }
 
-        // 🆕 Bloqueia criação de reward se o sistema estiver pausado
         if (rewardPaused) {
             const msgError = await message.channel.send(`⏸️ ${message.author}, o sistema de Rewards está **pausado** no momento! Aguarde ser reativado.`);
             setTimeout(() => msgError.delete().catch(() => {}), 6000);
@@ -282,9 +280,13 @@ client.on('messageCreate', async (message) => {
             return;
         }
 
+        // Guarda userId e tag de quem criou para mostrar no embed
+        const creatorId  = message.author.id;
+        const creatorTag = message.author.tag;
+
         const rowSetup = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
-                .setCustomId(`btn_setup_reward_${message.guild.id}_${message.channel.id}`)
+                .setCustomId(`btn_setup_reward_${message.guild.id}_${message.channel.id}_${creatorId}`)
                 .setLabel('Configurar Pergunta e Resposta')
                 .setStyle(ButtonStyle.Primary)
                 .setEmoji('⚙️')
@@ -297,10 +299,7 @@ client.on('messageCreate', async (message) => {
                 .setDescription(`Você solicitou a criação de um evento no canal <#${message.channel.id}> do servidor **${message.guild.name}**.\n\nClique no botão abaixo para definir a pergunta e a resposta do evento de forma totalmente invisível para os membros.`)
                 .setTimestamp();
 
-            await message.author.send({ 
-                embeds: [embedSetup], 
-                components: [rowSetup] 
-            });
+            await message.author.send({ embeds: [embedSetup], components: [rowSetup] });
         } catch (err) {
             const msg = await message.channel.send({ content: `⚠️ ${message.author}, sua DM (Mensagens Diretas) está fechada! Abra para eu poder enviar o painel de configuração de forma privada.` });
             setTimeout(() => msg.delete().catch(()=> {}), 10000);
@@ -310,11 +309,11 @@ client.on('messageCreate', async (message) => {
 
 client.on('interactionCreate', async interaction => {
 
-    // 🆕 --- PAUSAR REWARDS ---
+    // --- PAUSAR REWARDS ---
     if (interaction.isButton() && interaction.customId === 'btn_pause_rewards') {
         rewardPaused = true;
 
-        // Se tiver um reward ativo, cancela ele também
+        // Cancela reward ativo se houver
         if (activeReward) {
             if (activeReward.timeoutId) clearTimeout(activeReward.timeoutId);
             activeReward = null;
@@ -343,7 +342,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.update({ embeds: [embedPausado], components: [rowAtualizada] });
     }
 
-    // 🆕 --- DESPAUSAR REWARDS ---
+    // --- DESPAUSAR REWARDS ---
     if (interaction.isButton() && interaction.customId === 'btn_unpause_rewards') {
         rewardPaused = false;
 
@@ -385,18 +384,9 @@ client.on('interactionCreate', async interaction => {
             type: ChannelType.GuildText,
             topic: `${interaction.user.id}-${categoria}`, 
             permissionOverwrites: [
-                {
-                    id: interaction.guild.id, 
-                    deny: [PermissionsBitField.Flags.ViewChannel],
-                },
-                {
-                    id: interaction.user.id, 
-                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles],
-                },
-                {
-                    id: client.user.id, 
-                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory],
-                },
+                { id: interaction.guild.id,  deny: [PermissionsBitField.Flags.ViewChannel] },
+                { id: interaction.user.id,   allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles] },
+                { id: client.user.id,        allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
                 ...STAFF_ROLES.map(roleId => ({
                     id: roleId,
                     allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.AttachFiles]
@@ -494,10 +484,10 @@ client.on('interactionCreate', async interaction => {
                         .setPlaceholder('⭐ Selecione uma nota para o atendimento...')
                         .addOptions([
                             { label: '5 Estrelas', description: 'Excelente! Problema totalmente resolvido.', value: '5', emoji: '🤩' },
-                            { label: '4 Estrelas', description: 'Muito Bom! Fui bem atendido.', value: '4', emoji: '😁' },
-                            { label: '3 Estrelas', description: 'Bom. Atendeu às expectativas.', value: '3', emoji: '😐' },
-                            { label: '2 Estrelas', description: 'Ruim. Deixou a desejar.', value: '2', emoji: '🙁' },
-                            { label: '1 Estrela',  description: 'Péssimo. Não gostei do atendimento.', value: '1', emoji: '😡' }
+                            { label: '4 Estrelas', description: 'Muito Bom! Fui bem atendido.',              value: '4', emoji: '😁' },
+                            { label: '3 Estrelas', description: 'Bom. Atendeu às expectativas.',             value: '3', emoji: '😐' },
+                            { label: '2 Estrelas', description: 'Ruim. Deixou a desejar.',                   value: '2', emoji: '🙁' },
+                            { label: '1 Estrela',  description: 'Péssimo. Não gostei do atendimento.',       value: '1', emoji: '😡' }
                         ])
                 );
 
@@ -527,9 +517,7 @@ client.on('interactionCreate', async interaction => {
             .setRequired(true)
             .setMaxLength(1000);
 
-        const firstActionRow = new ActionRowBuilder().addComponents(motivoInput);
-        modal.addComponents(firstActionRow);
-
+        modal.addComponents(new ActionRowBuilder().addComponents(motivoInput));
         await interaction.showModal(modal);
     }
 
@@ -547,19 +535,17 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [embedObrigado] });
 
         const canalAvaliacoesId = process.env.AVALIACOES_CHANNEL_ID;
-        
         if (canalAvaliacoesId) {
             const canalLog = client.channels.cache.get(canalAvaliacoesId);
-            
             if (canalLog) {
                 const embedLog = new EmbedBuilder()
                     .setColor('#005cff')
                     .setAuthor({ name: 'Nova Avaliação Registrada', iconURL: interaction.user.displayAvatarURL() })
                     .setDescription('Uma nova avaliação de atendimento foi enviada no sistema!')
                     .addFields(
-                        { name: '👤 Usuário', value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
-                        { name: '📁 Departamento', value: `\`${categoria}\``, inline: true },
-                        { name: '⭐ Nota Recebida', value: `**${nota} Estrelas**`, inline: true },
+                        { name: '👤 Usuário',        value: `${interaction.user} (\`${interaction.user.tag}\`)`, inline: true },
+                        { name: '📁 Departamento',   value: `\`${categoria}\``,                                  inline: true },
+                        { name: '⭐ Nota Recebida',  value: `**${nota} Estrelas**`,                              inline: true },
                         { name: '📝 Motivo / Feedback', value: `> *"${motivo}"*` }
                     )
                     .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true, size: 512 }))
@@ -573,12 +559,19 @@ client.on('interactionCreate', async interaction => {
 
     // --- 6. BOTAO SETUP REWARD (Na DM) ---
     if (interaction.isButton() && interaction.customId.startsWith('btn_setup_reward_')) {
+        // Se pausou entre o +rewards e o clique do botão, bloqueia aqui também
+        if (rewardPaused) {
+            return interaction.reply({ content: '⏸️ O sistema de Rewards foi **pausado** antes de você configurar o evento. Peça para despausar e tente novamente.', ephemeral: true });
+        }
+
         const parts = interaction.customId.split('_');
-        const guildId = parts[3];
-        const channelId = parts[4];
+        // customId: btn_setup_reward_GUILDID_CHANNELID_CREATORID
+        const guildId    = parts[3];
+        const channelId  = parts[4];
+        const creatorId  = parts[5];
 
         const modal = new ModalBuilder()
-            .setCustomId(`modal_reward_${guildId}_${channelId}`)
+            .setCustomId(`modal_reward_${guildId}_${channelId}_${creatorId}`)
             .setTitle('Criar Novo Reward');
 
         const perguntaInput = new TextInputBuilder()
@@ -606,41 +599,49 @@ client.on('interactionCreate', async interaction => {
 
     // --- 7. RECEBE O MODAL DA DM E INICIA O REWARD NO SERVIDOR ---
     if (interaction.isModalSubmit() && interaction.customId.startsWith('modal_reward_')) {
+        // Última barreira: checa pause no momento exato de publicar
+        if (rewardPaused) {
+            return interaction.reply({ content: '⏸️ O sistema de Rewards está **pausado**. O evento não foi iniciado.', ephemeral: true });
+        }
+
         const parts = interaction.customId.split('_');
-        const guildId = parts[2];
+        // customId: modal_reward_GUILDID_CHANNELID_CREATORID
+        const guildId   = parts[2];
         const channelId = parts[3];
+        const creatorId = parts[4];
 
         const pergunta = interaction.fields.getTextInputValue('reward_pergunta');
         const resposta = interaction.fields.getTextInputValue('reward_resposta');
-
         const answerClean = resposta.toLowerCase().trim();
+
+        // Busca o usuário criador para exibir no embed
+        let creatorTag = 'Desconhecido';
+        try {
+            const creatorUser = await client.users.fetch(creatorId);
+            creatorTag = creatorUser.tag;
+        } catch (_) {}
 
         const timeoutId = setTimeout(async () => {
             if (activeReward && activeReward.channelId === channelId) {
-                activeReward = null; 
-
+                activeReward = null;
                 try {
-                    const guild = client.guilds.cache.get(guildId);
+                    const guild   = client.guilds.cache.get(guildId);
                     const channel = guild.channels.cache.get(channelId);
-                    
                     const embedExpirou = new EmbedBuilder()
-                        .setColor('#ff0000') 
+                        .setColor('#ff0000')
                         .setAuthor({ name: '⏳ REWARD EXPIRADO!', iconURL: client.user.displayAvatarURL() })
                         .setDescription(`Ninguém conseguiu adivinhar a tempo!\n\n> 💡 **A resposta correta era:** \`${resposta}\``)
                         .setTimestamp();
-                    
                     await channel.send({ embeds: [embedExpirou] });
-                } catch (e) {
-                    console.log("Erro ao expirar evento", e);
-                }
+                } catch (e) { console.log("Erro ao expirar evento", e); }
             }
         }, 90000);
 
         activeReward = {
-            channelId: channelId,
-            guildId: guildId,
+            channelId,
+            guildId,
             answer: answerClean,
-            timeoutId: timeoutId
+            timeoutId
         };
 
         const embedReward = new EmbedBuilder()
@@ -648,16 +649,16 @@ client.on('interactionCreate', async interaction => {
             .setAuthor({ name: '🎁 EVENTO REWARD!', iconURL: client.user.displayAvatarURL() })
             .setDescription(`**Pergunta:**\n> ${pergunta}\n\n*O primeiro a mandar a resposta certa no chat leva o prêmio!*\n\n⏳ **Atenção:** O evento expira automaticamente em 1 minuto e meio!`)
             .setTimestamp()
-            .setFooter({ text: 'Seja rápido!' });
+            .setFooter({ text: `Reward por: ${creatorTag}` }); // ← "Reward por: user"
 
         try {
-            const guild = client.guilds.cache.get(guildId);
+            const guild   = client.guilds.cache.get(guildId);
             const channel = guild.channels.cache.get(channelId);
-            
-            await channel.send({ 
-                content: '@here', 
+
+            await channel.send({
+                content: '@here',
                 embeds: [embedReward],
-                allowedMentions: { parse: ['everyone'] } 
+                allowedMentions: { parse: ['everyone'] }
             });
 
             await interaction.reply({ content: '✅ O evento reward foi iniciado com sucesso no servidor!', ephemeral: true });
@@ -670,7 +671,7 @@ client.on('interactionCreate', async interaction => {
     // --- 8. USUARIO ESCOLHE O CARGO NA DM ---
     if (interaction.isStringSelectMenu() && interaction.customId.startsWith('reward_role_select_')) {
         const guildId = interaction.customId.replace('reward_role_select_', '');
-        const roleId = interaction.values[0];
+        const roleId  = interaction.values[0];
 
         try {
             const guild = client.guilds.cache.get(guildId);
@@ -680,7 +681,7 @@ client.on('interactionCreate', async interaction => {
             if (!member) return interaction.reply({ content: '❌ Erro: Você não está mais no servidor.', ephemeral: true });
 
             if (roleId.startsWith('ID_AQUI_')) {
-                 return interaction.reply({ content: '⚠️ **Aviso:** O Administrador do bot ainda não configurou os IDs reais dos cargos no topo do código (index.js). Avise-o para arrumar isso!', ephemeral: true });
+                return interaction.reply({ content: '⚠️ **Aviso:** O Administrador do bot ainda não configurou os IDs reais dos cargos. Avise-o!', ephemeral: true });
             }
 
             await member.roles.add(roleId);
@@ -699,8 +700,8 @@ client.on('interactionCreate', async interaction => {
                 .setColor('#00ce5d')
                 .setDescription(`✅ **Sucesso!** O cargo foi adicionado à sua conta no servidor **${guild.name}**!\n\n⏳ *Este cargo é temporário e será removido automaticamente da sua conta em <t:${unixExp}:R>.*`);
                 
-            await interaction.update({ embeds: [embedSucesso], components: [] }); 
-            
+            await interaction.update({ embeds: [embedSucesso], components: [] });
+
         } catch (err) {
             console.log(err);
             await interaction.reply({ content: '❌ Houve um erro ao tentar te dar o cargo. O cargo do bot precisa estar acima do cargo que ele vai entregar, e ele precisa de permissão de "Gerenciar Cargos".', ephemeral: true });

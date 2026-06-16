@@ -30,6 +30,7 @@ function saveRewardsDB(data) {
 }
 
 let activeReward = null;
+let rewardPaused = false; // 🆕 Controla se o sistema de rewards está pausado
 
 const REWARD_ROLES = [
     { label: 'Pic Perm',   id: '1514769815712038913', emoji: '📷' },
@@ -48,6 +49,9 @@ const REWARD_ADMIN_ROLES = [
     '1515491977297133770',
     '1514769808208695428',
 ];
+
+// 🆕 Cargo exclusivo que pode pausar/despausar o sistema de rewards
+const PAUSE_ROLE_ID = '1514769809597005839';
 
 // Cargos que podem assumir e fechar tickets
 const STAFF_ROLES = [
@@ -158,7 +162,55 @@ client.on('ready', async () => {
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    if (activeReward && message.channel.id === activeReward.channelId) {
+    // 🆕 --- COMANDO !pause ---
+    if (message.content === '!pause') {
+        await message.delete().catch(() => {});
+
+        // Verifica se o membro tem o cargo exclusivo
+        const hasPauseRole = message.member?.roles.cache.has(PAUSE_ROLE_ID);
+        if (!hasPauseRole) {
+            const msgError = await message.channel.send(`❌ ${message.author}, você não possui permissão para usar este comando!`);
+            setTimeout(() => msgError.delete().catch(() => {}), 5000);
+            return;
+        }
+
+        const statusAtual = rewardPaused
+            ? '⏸️ **Status atual:** Sistema de Rewards está **PAUSADO**.'
+            : '▶️ **Status atual:** Sistema de Rewards está **ATIVO**.';
+
+        const embedPause = new EmbedBuilder()
+            .setColor('#005cff')
+            .setAuthor({ name: '⚙️ Gerenciar Sistema de Rewards', iconURL: client.user.displayAvatarURL() })
+            .setDescription(`O que deseja fazer?\n\n${statusAtual}`)
+            .setTimestamp();
+
+        const rowPause = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('btn_pause_rewards')
+                    .setLabel('Pausar')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('⏸️')
+                    .setDisabled(rewardPaused), // desabilita se já estiver pausado
+                new ButtonBuilder()
+                    .setCustomId('btn_unpause_rewards')
+                    .setLabel('Despausar')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('▶️')
+                    .setDisabled(!rewardPaused) // desabilita se já estiver ativo
+            );
+
+        try {
+            await message.author.send({ embeds: [embedPause], components: [rowPause] });
+        } catch (err) {
+            const msg = await message.channel.send(`⚠️ ${message.author}, sua DM está fechada! Abra para receber o painel de controle.`);
+            setTimeout(() => msg.delete().catch(() => {}), 8000);
+        }
+        return;
+    }
+
+    // Verifica resposta do reward ativo (só processa se NÃO estiver pausado)
+    if (activeReward && !rewardPaused && message.channel.id === activeReward.channelId) {
         if (message.content.toLowerCase().trim() === activeReward.answer) {
             const winner = message.author;
             const guildId = activeReward.guildId;
@@ -217,6 +269,13 @@ client.on('messageCreate', async (message) => {
             }
         }
 
+        // 🆕 Bloqueia criação de reward se o sistema estiver pausado
+        if (rewardPaused) {
+            const msgError = await message.channel.send(`⏸️ ${message.author}, o sistema de Rewards está **pausado** no momento! Aguarde ser reativado.`);
+            setTimeout(() => msgError.delete().catch(() => {}), 6000);
+            return;
+        }
+
         if (activeReward) {
             const msgError = await message.channel.send(`⚠️ ${message.author}, já existe um evento Reward em andamento! Aguarde ele finalizar ou expirar.`);
             setTimeout(() => msgError.delete().catch(() => {}), 5000);
@@ -250,6 +309,66 @@ client.on('messageCreate', async (message) => {
 });
 
 client.on('interactionCreate', async interaction => {
+
+    // 🆕 --- PAUSAR REWARDS ---
+    if (interaction.isButton() && interaction.customId === 'btn_pause_rewards') {
+        rewardPaused = true;
+
+        // Se tiver um reward ativo, cancela ele também
+        if (activeReward) {
+            if (activeReward.timeoutId) clearTimeout(activeReward.timeoutId);
+            activeReward = null;
+        }
+
+        const embedPausado = new EmbedBuilder()
+            .setColor('#ff0000')
+            .setDescription('⏸️ **Sistema de Rewards pausado com sucesso!**\n\nNenhum novo reward poderá ser criado ou respondido até que seja despausado.');
+
+        const rowAtualizada = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('btn_pause_rewards')
+                    .setLabel('Pausar')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('⏸️')
+                    .setDisabled(true),
+                new ButtonBuilder()
+                    .setCustomId('btn_unpause_rewards')
+                    .setLabel('Despausar')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('▶️')
+                    .setDisabled(false)
+            );
+
+        await interaction.update({ embeds: [embedPausado], components: [rowAtualizada] });
+    }
+
+    // 🆕 --- DESPAUSAR REWARDS ---
+    if (interaction.isButton() && interaction.customId === 'btn_unpause_rewards') {
+        rewardPaused = false;
+
+        const embedAtivo = new EmbedBuilder()
+            .setColor('#00ce5d')
+            .setDescription('▶️ **Sistema de Rewards reativado com sucesso!**\n\nO sistema voltou ao normal e novos rewards já podem ser criados.');
+
+        const rowAtualizada = new ActionRowBuilder()
+            .addComponents(
+                new ButtonBuilder()
+                    .setCustomId('btn_pause_rewards')
+                    .setLabel('Pausar')
+                    .setStyle(ButtonStyle.Danger)
+                    .setEmoji('⏸️')
+                    .setDisabled(false),
+                new ButtonBuilder()
+                    .setCustomId('btn_unpause_rewards')
+                    .setLabel('Despausar')
+                    .setStyle(ButtonStyle.Success)
+                    .setEmoji('▶️')
+                    .setDisabled(true)
+            );
+
+        await interaction.update({ embeds: [embedAtivo], components: [rowAtualizada] });
+    }
     
     // --- 1. ABRIR TICKET ---
     if (interaction.isStringSelectMenu() && interaction.customId === 'menu_ticket') {
@@ -300,7 +419,6 @@ client.on('interactionCreate', async interaction => {
             .setTimestamp()
             .setFooter({ text: `Ticket aberto por ${interaction.user.tag}`, iconURL: interaction.user.displayAvatarURL() });
 
-        // Botões: Assumir Ticket (Staff) + Encerrar Atendimento
         const rowTicket = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
@@ -320,13 +438,11 @@ client.on('interactionCreate', async interaction => {
 
     // --- 2. ASSUMIR TICKET ---
     if (interaction.isButton() && interaction.customId === 'assumir_ticket') {
-        // Verifica se quem clicou tem um cargo de staff
         const isStaff = interaction.member.roles.cache.some(r => STAFF_ROLES.includes(r.id));
         if (!isStaff) {
             return interaction.reply({ content: '❌ Apenas membros da Staff podem assumir um ticket.', ephemeral: true });
         }
 
-        // Atualiza os botões: desabilita o "Assumir" e mostra quem assumiu
         const rowAtualizada = new ActionRowBuilder()
             .addComponents(
                 new ButtonBuilder()
@@ -344,7 +460,6 @@ client.on('interactionCreate', async interaction => {
 
         await interaction.update({ components: [rowAtualizada] });
 
-        // Manda mensagem no canal avisando quem assumiu
         const embedAssumido = new EmbedBuilder()
             .setColor('#00ce5d')
             .setDescription(`🙋 ${interaction.user} **assumiu este ticket** e em breve irá te atender!`);
@@ -352,7 +467,7 @@ client.on('interactionCreate', async interaction => {
         await interaction.channel.send({ embeds: [embedAssumido] });
     }
 
-    // --- 3. FECHAR TICKET E MANDAR MENSAGEM NO PV ---
+    // --- 3. FECHAR TICKET ---
     if (interaction.isButton() && interaction.customId === 'fechar_ticket') {
         const topic = interaction.channel.topic;
         if (!topic || !topic.includes('-')) {
